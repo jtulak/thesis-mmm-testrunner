@@ -162,6 +162,9 @@ class CPAChecker(Tool):
     _name = "CPAChecker"
     _containerPath = "cpacheck/"
 
+    def run(self, rev):
+        print("CPAchecker is not yet implemented")
+
 class Coverity(Tool):
     _name = "Coverity"
     _containerPath = "coverity/"
