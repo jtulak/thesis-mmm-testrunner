@@ -1,0 +1,6 @@
+/coverity
+/cpacheck
+/cppcheck
+/gcc
+/output
+/output.bak
