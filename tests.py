@@ -80,10 +80,9 @@ def save_lines(subdir, tag, lines):
     path = os.path.join(OUTPUT, subdir)
     target = os.path.join(path, "%s.log"%tag)
 
-    if os.path.isdir(path):
-        shutil.rmtree(path)
+    if not os.path.isdir(path):
+        os.mkdir(path)
 
-    os.mkdir(path)
     with open(target, 'w') as f:
         for line in lines:
             f.write("%s\n" % line)
