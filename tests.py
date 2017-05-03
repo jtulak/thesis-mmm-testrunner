@@ -37,6 +37,12 @@ class RevIsNotParent(Exception):
 class ToolRuntimeError(RuntimeError):
     pass
 
+def git_checkout(rev):
+    curpath = os.getcwd()
+    os.chdir(REPO_PATH)
+    os.system('git checkout -q %s' % rev)
+    os.chdir(curpath)
+
 def git_range_to_revs(git_range):
     """ Get list of revisions for the specific range. """
     hashes=git_range.split('..')
@@ -249,7 +255,8 @@ except Exception as e:
 # run the tests
 for revision in revisions:
     print("git checkout %s" % str(revision)[0:10])
-    repo.head.reference = revision
+    #repo.head.reference = revision
+    git_checkout(revision)
     for tool in tools:
         print("Running %s..." % tool.name)
         try:
