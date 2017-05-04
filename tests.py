@@ -23,63 +23,13 @@ import os, sys, argparse
 import re
 import subprocess
 import shutil
+import time
 
-PATH = os.path.dirname(__file__)
-REPO_PATH = os.path.join(
-        os.path.realpath(os.path.dirname(__file__)),
-        '../xfsprogs-dev/')
+from lib import *
+
 LIVE = False
 OUTPUT = os.path.realpath(os.path.join(PATH, 'output'))
 
-class RevIsNotParent(Exception):
-    pass
-
-class ToolRuntimeError(RuntimeError):
-    pass
-
-def git_checkout(rev):
-    curpath = os.getcwd()
-    os.chdir(REPO_PATH)
-    os.system('git checkout -q %s' % rev)
-    os.chdir(curpath)
-
-def git_range_to_revs(git_range):
-    """ Get list of revisions for the specific range. """
-    hashes=git_range.split('..')
-
-    revisions = list()
-    older = None
-    newer = None
-
-    # find which git is the older one and which the newer one
-    a = repo.commit(hashes[0])
-    b = repo.commit(hashes[1])
-    if a.committed_date > b.committed_date:
-        older = b
-        newer = a
-    else:
-        older = a
-        newer = b
-
-    revisions.append(newer)
-
-    parents = newer.iter_parents()
-    for p in parents:
-        revisions.append(p)
-
-        if p == older:
-            break
-
-    try:
-        next(parents)
-    except StopIteration:
-        raise RevIsNotParent(
-                "Neither of the revisions %s and %s precedes the other one. "
-                "Are they in different branches?" %
-                (hashes[0], hashes[1]))
-
-    revisions = reversed(revisions)
-    return revisions
 
 def save_lines(subdir, tag, lines):
     """ Save lines to a file in OUTPUT/subdir and tags it with tag."""
@@ -92,23 +42,6 @@ def save_lines(subdir, tag, lines):
     with open(target, 'w') as f:
         for line in lines:
             f.write("%s\n" % line)
-
-
-
-
-
-def get_revisions(rev_list):
-    """ For output of argparse, get a list of revisions.
-        Break git range into specific revisions to allow a simple
-        for-each over the output of this function.
-    """
-    revisions = list()
-    for i in rev_list:
-        if i.find('..') != -1:
-            revisions += git_range_to_revs(i)
-        else:
-            revisions.append(repo.commit(i))
-    return revisions
 
 
 class Tool(object):
@@ -127,6 +60,7 @@ class Tool(object):
     def run(self, rev):
         os.chdir(self._containerPath)
         output = []
+        start = time.time()
         try:
             p = subprocess.Popen(
                     [self._cmd, REPO_PATH],
@@ -138,6 +72,10 @@ class Tool(object):
                 if LIVE:
                     print(line)
                 output.append(line)
+
+            # save also the runtime
+            end = time.time()
+            output.append("\n\nRuntime: %s" % str(end-start))
 
             save_lines(rev, self.name, output)
 
@@ -151,7 +89,7 @@ class Tool(object):
     @property
     def name(self):
         if self._name is None:
-            raise NotImplemented()
+            raise NotImplementedError()
         return self._name
 
     def __str__(self):
@@ -220,28 +158,13 @@ if args.tool:
         sys.exit(1)
     tools = [t for t in tools if t.name == args.tool]
 
-if args.path:
-    REPO_PATH = os.path.realpath(args.path)
-try:
-    repo = Repo(REPO_PATH)
-except git.exc.NoSuchPathError:
-    print("Error: Path not a git repository: %s" % REPO_PATH)
-    sys.exit(1)
+repo = get_repo_or_die(args.path)
+revisions = get_revisions_or_die(repo, args.revisions)
 
 LIVE = args.live
-
 if args.output:
     OUTPUT = args.output
 
-# get revisions to test
-try:
-    revisions = get_revisions(args.revisions)
-except RevIsNotParent as ex:
-    print("Error: %s" % str(ex))
-    sys.exit(1)
-except git.exc.BadName as ex:
-    print("Error: %s" % str(ex))
-    sys.exit(1)
 
 try:
     if os.path.isdir(OUTPUT):
