@@ -48,6 +48,7 @@ class Issue(object):
         self._line = int(line)
         self._category = category
         self._text = text
+        self.index = 0
 
     @property
     def line(self):
@@ -73,6 +74,14 @@ class Issue(object):
         return self.file == issue.file \
             and self.category == issue.category \
             and self.text == self.text
+
+    def __hash__(self):
+        #return hash(self.__repr__())
+        return hash('%s (%s) %s [%d]' % (
+                self.file,
+                self.category.name,
+                self.text,
+                self.index))
 
 
     def __str__(self):
@@ -127,8 +136,14 @@ class Parser(object):
 
     def add_issue(self, revision, issue):
         if not revision in self._issues:
-            self._issues[revision] = list()
-        self._issues[revision].append(issue)
+            self._issues[revision] = set()
+
+        # so we can have multiple issues with the same description
+        # in the same file
+        while issue in self._issues[revision]:
+            issue.index +=1
+
+        self._issues[revision].add(issue)
 
     def get_all_issues(self, revision):
         for issue in self._issues[revision]:
@@ -144,14 +159,11 @@ class Parser(object):
         """ Return a tuple (added, removed) with lists of issues
             changed between the two revisions.
         """
-        issuesO = self._issues[older]
-        issuesN = self._issues[newer]
+        issuesO = set(self._issues[older])
+        issuesN = set(self._issues[newer])
 
-        added = issuesN[:]
-        removed = issuesO[:]
-
-        # TODO how to do the diff, while keeping an eye
-        # on multiple occurences of the same issue?
+        added = issuesN-issuesO
+        removed = issuesO - issuesN
         return (added,removed)
 
     def compile(self):
@@ -188,16 +200,19 @@ class CppCheck(Parser):
         """ CppCheck has a simple, single-line format of issues:
             [FILE:LINE]: (TYPE) text
         """
-        if line[0] != '[':
-            # certainly it is not an issue
-            return None
+        try:
+            if line[0] != '[':
+                # certainly it is not an issue
+                return None
 
-        matches = self.re.match(line)
-        return Issue(
-                file=matches.group(1),
-                line=matches.group(2),
-                category = self.get_category(matches.group(3)),
-                text = matches.group(4))
+            matches = self.re.match(line)
+            return Issue(
+                    file=matches.group(1),
+                    line=matches.group(2),
+                    category = self.get_category(matches.group(3)),
+                    text = matches.group(4))
+        except:
+            return None
 
 
 

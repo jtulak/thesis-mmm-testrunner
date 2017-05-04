@@ -41,7 +41,7 @@ def git_checkout(rev):
     os.system('git checkout -q %s' % rev)
     os.chdir(curpath)
 
-def git_range_to_revs(git_range):
+def git_range_to_revs(repo, git_range):
     """ Get list of revisions for the specific range. """
     hashes=git_range.split('..')
 
@@ -87,7 +87,7 @@ def get_revisions(repo, rev_list):
     revisions = list()
     for i in rev_list:
         if i.find('..') != -1:
-            revisions += git_range_to_revs(i)
+            revisions += git_range_to_revs(repo, i)
         else:
             revisions.append(repo.commit(i))
     return revisions
