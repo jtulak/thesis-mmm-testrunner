@@ -2,5 +2,6 @@
 /cpacheck
 /cppcheck
 /gcc
+/clang
 /output
 /output.bak
