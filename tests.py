@@ -120,6 +120,10 @@ class Coverity(Tool):
 
         shutil.move('cov', target)
 
+class Clang(Tool):
+    _name = "Clang"
+    _containerPath = "clang/"
+
 class GCC(Tool):
     _name = "GCC"
     _containerPath = "gcc/"
@@ -130,7 +134,7 @@ class GCC(Tool):
 
 # ############### MAIN ##################
 
-tools = [GCC(), CppCheck(), CPAChecker(), Coverity()]
+tools = [GCC(), Clang(), CppCheck(), CPAChecker(), Coverity()]
 tools_names = [t.name for t in tools]
 
 # parse args

@@ -33,6 +33,7 @@ RES_PATH = os.path.join(
 
 
 class Categories(Enum):
+    UNKNOWN = 0
     STYLE = 1
     ERROR = 2
     SECURITY = 3
@@ -146,14 +147,20 @@ class Parser(object):
         self._issues[revision].add(issue)
 
     def get_all_issues(self, revision):
-        for issue in self._issues[revision]:
-            yield issue
+        try:
+            for issue in self._issues[revision]:
+                yield issue
+        except KeyError:
+            return None
 
     def get_issues(self, revision, file):
-        for issue in self._issues[revision]:
-            if issue.file != file:
-                continue
-            yield issue
+        try:
+            for issue in self._issues[revision]:
+                if issue.file != file:
+                    continue
+                yield issue
+        except KeyError:
+            return None
 
     def get_diff(self, older, newer):
         """ Return a tuple (added, removed) with lists of issues
@@ -216,8 +223,112 @@ class CppCheck(Parser):
 
 
 
+class Clang(Parser):
+    _filename = "Clang.log.cut"
+    _buffer = []
+
+    parsed = 0
+    def compile(self):
+        """ Example of the line we are parsing:
+        copy/xfs_copy.c:144:40: warning: unused parameter 'log' [-Wunused-parameter]
+        The groups are defined.
+        """
+        self.re1 = re.compile('^([^/]+)/([^:]+):([0-9]+):([0-9]+): ([^:]+): (.+) \[([^][]+)\]$')
+        self.re2 = re.compile('^([^/]+)/([^:]+):([0-9]+):([0-9]+): ([^:]+): (.+)$')
+        self.DIR = 1
+        self.FILE = 2
+        self.LINE = 3
+        self.COLUMN = 4
+        self.TYPE = 5
+        self.TEXT = 6
+        self.FLAG = 7
+
+    def get_issue_type(self, line0, match):
+        txt = line0[7:-1]
+        if txt == "COMPILER_WARNING":
+            try:
+                flag = match.group(self.FLAG)
+                ret = {
+                    # style
+                    '-Wdiscarded-qualifiers': Categories.STYLE,
+                    '-Wshadow': Categories.STYLE,
+                    '-Wunused-parameter': Categories.STYLE,
+                    '-Wpointer-arith': Categories.STYLE,
+                    '-Wunused-but-set-variable': Categories.STYLE,
+                    '-Wstrict-prototypes': Categories.STYLE,
+                    '-Wempty-body': Categories.STYLE,
+                    '-Wmissing-field-initializers': Categories.STYLE,
+                    '-Wtype-limits': Categories.STYLE,
+                    '-Wshift-negative-value': Categories.STYLE,
+                    '-Wsign-compare': Categories.STYLE,
+                    # security
+                    '-Wformat-nonliteral': Categories.SECURITY,
+                    # errors
+                    '-Wfloat-equal': Categories.ERROR,
+                    }
+                if flag in ret:
+                    return ret[flag]
+                else:
+                    print("Unknown type of issue:\n%s" % match.group(0))
+                    return Categories.UNKNOWN
+            except IndexError:
+                # this is without flag
+                #print("No flag: %s" % match.group(self.TEXT))
+                pass
+        return Categories.UNKNOWN
+
+    def parse_buffer(self):
+        # match can be on either line 1 or one of the following ones,
+        # depending on if it is the first issue in a specific function or not
+        # and depending on some includes.
+
+        line = 0
+        match = None
+        try:
+            while match is None:
+                line += 1
+                match = self.re1.match(self._buffer[line])
+        except:
+            # nothing was found until the end
+            line = 0
+            while match is None:
+                line += 1
+                match = self.re2.match(self._buffer[line])
+
+        # now, we want only mkfs files...
+        if match.group(self.DIR) != "mkfs":
+            return None
+
+        issue_type = self.get_issue_type(self._buffer[0], match)
+        return Issue(file=match.group(self.DIR)+'/'+match.group(self.FILE),
+                line=match.group(self.LINE),
+                category=issue_type,
+                text=match.group(self.TEXT))
+
+
+    def parse(self, line):
+        """ We have multiline outputs here, so we have to save the lines
+            into a buffer one by one and when there is just a newline,
+            then we can decide, because we filled one issue into the
+            buffer.
+        """
+        self.parsed += 1
+        if line == "CURRENT DEFECTS" or line == "===============":
+            return None
+
+        if len(line):
+            # line is not empty, so it is still one issue,
+            # just add it to buffer
+            self._buffer.append(line)
+            return None
+
+        # the current line was empty, so we found the end of the issue
+        issue = self.parse_buffer()
+        self._buffer = []
+        return issue
+
 class GCC(Parser):
-    _filename = "GCC.log"
+    _filename = "GCC.log.nocolors"
 
 class Coverity(Parser):
     _filename = "Coverity.log"
@@ -226,7 +337,7 @@ class Coverity(Parser):
 # ------------------------------------------------
 #   main
 #
-tools = [GCC, CppCheck, CPAChecker, Coverity]
+tools = [GCC, Clang, CppCheck, CPAChecker, Coverity]
 tools_names = [t.__name__ for t in tools]
 parser = argparse.ArgumentParser(description='Iterate over results and print results.')
 parser.add_argument('revisions', metavar='REVISION', type=str, nargs='+',
