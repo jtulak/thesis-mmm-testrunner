@@ -7,14 +7,28 @@ if [ $# -ne 1 ]; then
 fi
 
 if [ -d "$1" ]; then
-	# remove shell escape codes for colors
-	cat "$1/Clang.log" | \
-		sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g" \
-		> "$1/Clang.log.nocolors"
+	for d in $(ls "$1"); do
+		# remove shell escape codes for colors
+		if [ -f "$1/$d/Clang.log" ]; then
+			cat "$1/$d/Clang.log" | \
+				sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g" \
+				> "$1/$d/Clang.log.nocolors"
 
-	cat "$1/Clang.log.nocolors" | \
-		sed -n -e '/CURRENT DEFECTS/,$p' \
-		> "$1/Clang.log.cut"
+			cat "$1/$d/Clang.log.nocolors" | \
+				sed -n -e '/CURRENT DEFECTS/,$p' \
+				> "$1/$d/Clang.log.cut"
+		fi
+
+		if [ -f "$1/$d/GCC.log" ]; then
+			cat "$1/$d/GCC.log" | \
+				sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g" \
+				> "$1/$d/GCC.log.nocolors"
+
+			cat "$1/$d/GCC.log.nocolors" | \
+				sed -n -e '/CURRENT DEFECTS/,$p' \
+				> "$1/$d/GCC.log.cut"
+		fi
+	done
 else
 	echo "Error: $1 is not a directory!"
 	exit 1

@@ -133,6 +133,15 @@ class GCC(Tool):
 
 
 # ############### MAIN ##################
+# But first... time for some poetry:
+#
+# Pěkně řádek po řádku,
+# píšu doma pohádku.
+# Co v ní bude, draci, hrady?
+# To bych brzo umřel hlady.
+# Kýbl plný testů, kódů:
+# čarodějné divné vúdú.
+#
 
 tools = [GCC(), Clang(), CppCheck(), CPAChecker(), Coverity()]
 tools_names = [t.name for t in tools]
@@ -191,4 +200,4 @@ for revision in revisions:
         except ToolRuntimeError as e:
             print('Tool %s eded with an error: %s' %(tool.name, e))
 
-print("All done, the output is saved in directory %s" % OUTPUT)
+print("Outputs saved, now we are cleaning them...")

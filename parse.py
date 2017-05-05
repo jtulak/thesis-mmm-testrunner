@@ -24,12 +24,15 @@ import argparse
 from git import repo
 import git
 from enum import Enum
+import json
 
 from lib import *
 
 RES_PATH = os.path.join(
         os.path.realpath(os.path.dirname(__file__)),
         '../tex/results/output/')
+
+CHECK_FOR_MKFS_ONLY = True
 
 
 class Categories(Enum):
@@ -66,6 +69,9 @@ class Issue(object):
     @property
     def file(self):
         return self._file
+
+    def extendText(self, text):
+        self._text += "\n"+text
 
     def __eq__(self, issue):
         """ Return True if the given issue is the same,
@@ -110,6 +116,8 @@ class Parser(object):
     _filename = None
     _issues = {}
 
+    lastIssue = None
+
     def __init__(self, resultsdir):
         """ resultsdir is the directory with all commits-dirs """
         self.resultsdir = resultsdir
@@ -145,6 +153,7 @@ class Parser(object):
             issue.index +=1
 
         self._issues[revision].add(issue)
+        self.lastIssue = issue
 
     def get_all_issues(self, revision):
         try:
@@ -244,37 +253,39 @@ class Clang(Parser):
         self.FLAG = 7
 
     def get_issue_type(self, line0, match):
-        txt = line0[7:-1]
-        if txt == "COMPILER_WARNING":
-            try:
-                flag = match.group(self.FLAG)
-                ret = {
-                    # style
-                    '-Wdiscarded-qualifiers': Categories.STYLE,
-                    '-Wshadow': Categories.STYLE,
-                    '-Wunused-parameter': Categories.STYLE,
-                    '-Wpointer-arith': Categories.STYLE,
-                    '-Wunused-but-set-variable': Categories.STYLE,
-                    '-Wstrict-prototypes': Categories.STYLE,
-                    '-Wempty-body': Categories.STYLE,
-                    '-Wmissing-field-initializers': Categories.STYLE,
-                    '-Wtype-limits': Categories.STYLE,
-                    '-Wshift-negative-value': Categories.STYLE,
-                    '-Wsign-compare': Categories.STYLE,
-                    # security
-                    '-Wformat-nonliteral': Categories.SECURITY,
-                    # errors
-                    '-Wfloat-equal': Categories.ERROR,
-                    }
-                if flag in ret:
-                    return ret[flag]
-                else:
-                    print("Unknown type of issue:\n%s" % match.group(0))
-                    return Categories.UNKNOWN
-            except IndexError:
-                # this is without flag
-                #print("No flag: %s" % match.group(self.TEXT))
-                pass
+        #txt = line0[7:-1]
+        #if txt == "CLANG_WARNING" or txt == "COMPILER_WARNING":
+        try:
+            flag = match.group(self.FLAG)
+            ret = {
+                # style
+                '-Wdiscarded-qualifiers': Categories.STYLE,
+                '-Wshadow': Categories.STYLE,
+                '-Wunused-parameter': Categories.STYLE,
+                '-Wpointer-arith': Categories.STYLE,
+                '-Wunused-but-set-variable': Categories.STYLE,
+                '-Wstrict-prototypes': Categories.STYLE,
+                '-Wempty-body': Categories.STYLE,
+                '-Wmissing-field-initializers': Categories.STYLE,
+                '-Wtype-limits': Categories.STYLE,
+                '-Wshift-negative-value': Categories.STYLE,
+                '-Wsign-compare': Categories.STYLE,
+                '-Wincompatible-pointer-types-discards-qualifiers': Categories.STYLE,
+                '-Wcast-align': Categories.STYLE,
+                # security
+                '-Wformat-nonliteral': Categories.SECURITY,
+                # errors
+                '-Wfloat-equal': Categories.ERROR,
+                }
+            if flag in ret:
+                return ret[flag]
+            else:
+                print("Unknown type of issue:\n%s" % match.group(0))
+                return Categories.UNKNOWN
+        except IndexError:
+            # this is without flag
+            #print("No flag: %s" % match.group(self.TEXT))
+            pass
         return Categories.UNKNOWN
 
     def parse_buffer(self):
@@ -288,15 +299,15 @@ class Clang(Parser):
             while match is None:
                 line += 1
                 match = self.re1.match(self._buffer[line])
-        except:
+        except IndexError:
             # nothing was found until the end
             line = 0
             while match is None:
                 line += 1
                 match = self.re2.match(self._buffer[line])
 
-        # now, we want only mkfs files...
-        if match.group(self.DIR) != "mkfs":
+        # do we want only mkfs files?
+        if CHECK_FOR_MKFS_ONLY and match.group(self.DIR) != "mkfs":
             return None
 
         issue_type = self.get_issue_type(self._buffer[0], match)
@@ -323,16 +334,66 @@ class Clang(Parser):
             return None
 
         # the current line was empty, so we found the end of the issue
-        issue = self.parse_buffer()
-        self._buffer = []
-        return issue
+        try:
+            issue = self.parse_buffer()
+            self._buffer = []
+            return issue
+        except IndexError:
+            # caused by multiple newlines in a row
+            self._buffer = []
+            return None
 
-class GCC(Parser):
-    _filename = "GCC.log.nocolors"
+class GCC(Clang):
+    _filename = "GCC.log.cut"
 
 class Coverity(Parser):
-    _filename = "Coverity.log"
-    _dirname = "cov.output"
+    _filename = "cov.output/json"
+
+    def compile(self):
+        pass
+
+    def get_type(self, issue):
+        # select the last item from the list
+        kind = issue['checkerProperties']['issueKinds'][-1]
+        if kind == 'QUALITY':
+            return Categories.STYLE
+        elif kind == 'SECURITY':
+            return Categories.SECURITY
+        return Categories.UNKNOWN
+
+    def parse_events_tree(self, revision, issue, events):
+        """ Recursively add all events, because Coverity output is a tree
+            of events with variable depth.
+        """
+        # Maybe lets make it just a single-level and all the sublevels are hints and examples?
+        for event in events:
+            if event['eventDescription'][:7] == "Example":
+                # This issue is only continuation of the last issue,
+                # so add its text but do nothing else
+                self.lastIssue.extendText(event['eventDescription'])
+            else:
+                # get the directory and file
+                d,f = event['filePathname'].split('/')[-2:]
+                self.add_issue(revision, Issue(
+                    file = os.path.join(d,f),
+                    line = event['lineNumber'],
+                    category = self.get_type(issue),
+                    text = event['eventDescription']
+                ))
+                if 'events' in event and event['events'] is not None:
+                    self.parse_events_tree(revision, issue, event['events'])
+
+    def run(self, revision):
+        """ Coverity produces JSON and because we don't need the regular line-by-line
+            parsing as for the other tools, implement custom run().
+        """
+        issues = None
+        with open(self._get_path(revision)) as data_file:
+            data = json.load(data_file)
+            issues = data['issues']
+
+        for issue in issues:
+            self.parse_events_tree(revision, issue, issue['events'])
 
 # ------------------------------------------------
 #   main
@@ -351,10 +412,15 @@ parser.add_argument('--respath', metavar='PATH', type=str,
                 help='Path to the results directory.')
 parser.add_argument('-d', '--diff', action='store_true',
                 help='Print only the differences between two following revisions.')
+parser.add_argument('-a', '--all', action='store_true',
+                help='Do not check only for mkfs, but for whole xfsprogs.')
 
 args = parser.parse_args()
 repo = None
 revisions = None
+
+if args.all:
+    CHECK_FOR_MKFS_ONLY = False
 
 # test args values and get data
 if args.tool:

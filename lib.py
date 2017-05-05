@@ -38,7 +38,7 @@ class ToolRuntimeError(RuntimeError):
 def git_checkout(rev):
     curpath = os.getcwd()
     os.chdir(REPO_PATH)
-    os.system('git checkout -q %s' % rev)
+    os.system('git checkout -q --force %s' % rev)
     os.chdir(curpath)
 
 def git_range_to_revs(repo, git_range):
