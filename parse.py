@@ -272,8 +272,7 @@ class Clang(Parser):
                 '-Wsign-compare': Categories.STYLE,
                 '-Wincompatible-pointer-types-discards-qualifiers': Categories.STYLE,
                 '-Wcast-align': Categories.STYLE,
-                # security
-                '-Wformat-nonliteral': Categories.SECURITY,
+                '-Wformat-nonliteral': Categories.STYLE,
                 # errors
                 '-Wfloat-equal': Categories.ERROR,
                 }
