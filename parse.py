@@ -42,7 +42,12 @@ class Categories(Enum):
     SECURITY = 3
 
 class Issue(object):
-    def __init__(self, file, line, category, text):
+    def __init__(self, file, line, category, text, custom_hash=""):
+        """
+            custom_hash is for special cases like coverity, which has
+            solved the cross-revision trackability for us, and we can
+            uniquely identify the issue at any revision.
+        """
 
         if not isinstance(category, Categories):
             raise Exception("Unknown category, not member of Categories enum: %s"
@@ -53,6 +58,7 @@ class Issue(object):
         self._category = category
         self._text = text
         self.index = 0
+        self._hash = custom_hash
 
     @property
     def line(self):
@@ -70,6 +76,10 @@ class Issue(object):
     def file(self):
         return self._file
 
+    @property
+    def custom_hash(self):
+        return self._hash
+
     def extendText(self, text):
         self._text += "\n"+text
 
@@ -78,31 +88,52 @@ class Issue(object):
             as this one. Line number can differ, because the offending
             piece of code could move between revisions.
         """
-        return self.file == issue.file \
-            and self.category == issue.category \
-            and self.text == self.text
+        if self.custom_hash and issue.custom_hash:
+            return self.custom_hash == issue.custom_hash
+        else:
+            return self.file == issue.file \
+                and self.category == issue.category \
+                and self.text == self.text
 
     def __hash__(self):
         #return hash(self.__repr__())
-        return hash('%s (%s) %s [%d]' % (
+        return hash('%s %s %s %d %s' % (
                 self.file,
                 self.category.name,
                 self.text,
-                self.index))
+                self.index,
+                self._hash))
 
 
     def __str__(self):
-        return '%s:%d (%s)\n %s' % (
-                self.file,
-                self.line,
-                self.category.name,
-                self.text)
+        if len(self._hash):
+            return '%s:%d (%s)\n %s\n Hash is: %s' % (
+                    self.file,
+                    self.line,
+                    self.category.name,
+                    self.text,
+                    self._hash)
+        else:
+            return '%s:%d (%s)\n %s' % (
+                    self.file,
+                    self.line,
+                    self.category.name,
+                    self.text)
+
     def __repr__(self):
-        return '<Issue %s:%d (%s) %s>' % (
-                self.file,
-                self.line,
-                self.category,
-                self.text)
+        if len(self._hash):
+            return '<Issue %s:%d (%s) %s, hash %s>' % (
+                    self.file,
+                    self.line,
+                    self.category,
+                    self.text,
+                    self._hash)
+        else:
+            return '<Issue %s:%d (%s) %s>' % (
+                    self.file,
+                    self.line,
+                    self.category,
+                    self.text)
 
 def print_issues(l):
     count = 0
@@ -371,27 +402,6 @@ class Coverity(Parser):
             return Categories.SECURITY
         return Categories.UNKNOWN
 
-    def parse_events_tree(self, revision, issue, events):
-        """ Recursively add all events, because Coverity output is a tree
-            of events with variable depth.
-        """
-        # Maybe lets make it just a single-level and all the sublevels are hints and examples?
-        for event in events:
-            if event['eventDescription'][:7] == "Example":
-                # This issue is only continuation of the last issue,
-                # so add its text but do nothing else
-                self.lastIssue.extendText(event['eventDescription'])
-            else:
-                # get the directory and file
-                d,f = event['filePathname'].split('/')[-2:]
-                self.add_issue(revision, Issue(
-                    file = os.path.join(d,f),
-                    line = event['lineNumber'],
-                    category = self.get_type(issue),
-                    text = event['eventDescription']
-                ))
-                if 'events' in event and event['events'] is not None:
-                    self.parse_events_tree(revision, issue, event['events'])
 
     def run(self, revision):
         """ Coverity produces JSON and because we don't need the regular line-by-line
@@ -402,8 +412,25 @@ class Coverity(Parser):
             data = json.load(data_file)
             issues = data['issues']
 
+        i = 0
         for issue in issues:
-            self.parse_events_tree(revision, issue, issue['events'])
+            #self.parse_events_tree(revision, issue, issue['events'])
+            main = None
+            for event in issue['events']:
+                if event['main']:
+                    main = event
+                    # get the directory and file
+            d,f = main['filePathname'].split('/')[-2:]
+            if CHECK_FOR_MKFS_ONLY and d[-4:] != "mkfs":
+                continue
+
+            self.add_issue(revision, Issue(
+                file = os.path.join(d,f),
+                line = main['lineNumber'],
+                category = self.get_type(issue),
+                text = main['eventDescription'],
+                custom_hash = issue['mergeKey'],
+            ))
 
 # ------------------------------------------------
 #   main
