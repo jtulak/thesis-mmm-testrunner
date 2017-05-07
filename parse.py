@@ -114,7 +114,7 @@ def print_issues(l):
 class Parser(object):
     """ A generic parser for all tools """
     _filename = None
-    _issues = {}
+    _issues = None
 
     lastIssue = None
 
@@ -122,6 +122,7 @@ class Parser(object):
         """ resultsdir is the directory with all commits-dirs """
         self.resultsdir = resultsdir
         self.compile()
+        self._issues = dict()
 
     def _get_path(self, revision):
         if self._filename is None:
@@ -203,8 +204,14 @@ class CPAChecker(Parser):
 class CppCheck(Parser):
     _filename = "CppCheck.log"
 
+    DIR=1
+    FILE=2
+    LINE=3
+    CATEGORY=4
+    TEXT=5
+
     def compile(self):
-        self.re = re.compile('^\[([^:]+):([0-9]+)\]: \(([^)]+)\) (.*)$')
+        self.re = re.compile('^\[([^:]+)/([^:/]+):([0-9]+)\]: \(([^)]+)\) (.*)$')
 
     def get_category(self, string):
         if string == "style":
@@ -222,11 +229,15 @@ class CppCheck(Parser):
                 return None
 
             matches = self.re.match(line)
+
+            if CHECK_FOR_MKFS_ONLY and matches.group(self.DIR)[-4:] != "mkfs":
+                return None
+
             return Issue(
-                    file=matches.group(1),
-                    line=matches.group(2),
-                    category = self.get_category(matches.group(3)),
-                    text = matches.group(4))
+                    file=matches.group(self.DIR)+matches.group(self.FILE),
+                    line=matches.group(self.LINE),
+                    category = self.get_category(matches.group(self.CATEGORY)),
+                    text = matches.group(self.TEXT))
         except:
             return None
 
