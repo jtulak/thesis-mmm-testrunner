@@ -189,14 +189,16 @@ class Parser(object):
 
     def get_all_issues(self, revision):
         try:
-            for issue in self._issues[revision]:
+            for issue in sorted(self._issues[revision],
+                    key = lambda x: x.line):
                 yield issue
         except KeyError:
             return None
 
     def get_issues(self, revision, file):
         try:
-            for issue in self._issues[revision]:
+            for issue in sorted(self._issues[revision],
+                    key = lambda x: x.line):
                 if issue.file != file:
                     continue
                 yield issue
