@@ -97,7 +97,7 @@ class Issue(object):
 
     def __hash__(self):
         #return hash(self.__repr__())
-        return hash('%s %s %s %d %s' % (
+        return hash((
                 self.file,
                 self.category.name,
                 self.text,
@@ -388,7 +388,44 @@ class GCC(Clang):
     _filename = "GCC.log.cut"
 
 class Coverity(Parser):
-    _filename = "cov.output/json"
+    _filename = "cov.output/%s/json"
+
+    class Levels(Enum):
+        LOW = 1
+        MEDIUM = 2
+        HIGH = 3
+        CUSTOM = 4
+    _level = Levels.HIGH
+
+    @classmethod
+    def level(cls, lvl = None):
+        if lvl is None:
+            return cls._level
+        else:
+            if cls.level_valid(lvl):
+                cls._level = list(cls.Levels)[cls.levels_list().index(lvl)]
+            else:
+                raise ValueError("Unknown Coverity level %s" % lvl)
+
+    @classmethod
+    def level_valid(self, lvl):
+        if lvl in self.levels_list():
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def enum_to_str(enum):
+        return str(enum).split('.')[1].lower()
+
+    @classmethod
+    def levels_list(cls):
+        return list(map(cls.enum_to_str,cls.Levels))
+
+    def _get_path(self, revision):
+        return os.path.join(self.resultsdir,
+                revision,
+                self._filename % self.enum_to_str(self.level()))
 
     def compile(self):
         pass
@@ -432,14 +469,21 @@ class Coverity(Parser):
                 custom_hash = issue['mergeKey'],
             ))
 
+
 # ------------------------------------------------
 #   main
 #
 tools = [GCC, Clang, CppCheck, CPAChecker, Coverity]
 tools_names = [t.__name__ for t in tools]
+
 parser = argparse.ArgumentParser(description='Iterate over results and print results.')
 parser.add_argument('revisions', metavar='REVISION', type=str, nargs='+',
                 help='Git hash for revisions. Git range is accepted too.')
+parser.add_argument('-c', '--clevel', metavar='LEVEL', type=str,
+        help='Level of Coverity analysis. Default is %s. '
+                     'Supported levels: %s' %(
+                        Coverity.enum_to_str(Coverity.level()),
+                        ', '.join(Coverity.levels_list())))
 parser.add_argument('--tool', metavar='TOOL', type=str,
                 help='One of the supported tools. If ommited, all are run. '
                      'Supported tools: %s' % ', '.join(tools_names))
@@ -459,12 +503,23 @@ revisions = None
 if args.all:
     CHECK_FOR_MKFS_ONLY = False
 
+if args.clevel:
+    try:
+        Coverity.level(args.clevel)
+    except ValueError:
+        print("Invalid Coverity level %s. Accepted levels are: %s" %
+                (args.clevel,', '.join(Coverity.levels_list())))
+        sys.exit(1)
+
+
 # test args values and get data
 if args.tool:
     if args.tool not in tools_names:
         print("Unknown tool %s" % args.tool)
         sys.exit(1)
     tools = [t for t in tools if t.__name__ == args.tool]
+    if args.tool != "Coverity" and args.clevel:
+        print("Option --clevel is ignored, because Coverity is not parsed.")
 
 repo = get_repo_or_die(args.gitpath)
 revisions = get_revisions_or_die(repo, args.revisions)
