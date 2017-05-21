@@ -143,7 +143,7 @@ class GCC(Tool):
 # čarodějné divné vúdú.
 #
 
-tools = [GCC(), Clang(), CppCheck(), CPAChecker(), Coverity()]
+tools = [GCC(), Clang(), CppCheck(), Coverity()]
 tools_names = [t.name for t in tools]
 
 # parse args

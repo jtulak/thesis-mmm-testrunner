@@ -475,7 +475,7 @@ class Coverity(Parser):
 # ------------------------------------------------
 #   main
 #
-tools = [GCC, Clang, CppCheck, CPAChecker, Coverity]
+tools = [GCC, Clang, CppCheck, Coverity]
 tools_names = [t.__name__ for t in tools]
 
 parser = argparse.ArgumentParser(description='Iterate over results and print results.')
